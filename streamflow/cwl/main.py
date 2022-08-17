@@ -3,12 +3,12 @@ import json
 import logging
 import os
 
+import cwl_utils.parser
 import cwltool.context
 import cwltool.load_tool
 import cwltool.loghandler
 import cwltool.main
 import cwltool.utils
-from cwltool.resolver import tool_resolver
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.core.context import StreamFlowContext
@@ -42,20 +42,12 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         # noinspection PyProtectedMember
         cwltool.loghandler._logger.setLevel(logging.WARN)
     # Load CWL workflow definition
-    loading_context = cwltool.context.LoadingContext()
-    loading_context.resolver = tool_resolver
-    loading_context.loader = cwltool.load_tool.default_loader(
-        loading_context.fetcher_constructor)
-    loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(cwl_args[0], loading_context)
-    cwltool.main.setup_schema(argparse.Namespace(enable_ext=True), None)
-    loading_context, uri = cwltool.load_tool.resolve_and_validate_document(
-        loading_context, workflowobj, uri
-    )
-    cwl_definition = cwltool.load_tool.make_tool(uri, loading_context)
+    cwl_definition = cwl_utils.parser.load_document_by_uri(cwl_args[0])
     if len(cwl_args) == 2:
+        loading_context = cwltool.context.LoadingContext()
         loader = cwltool.load_tool.default_loader(
             loading_context.fetcher_constructor)
-        loader.add_namespaces(cwl_definition.metadata.get('$namespaces', {}))
+        loader.add_namespaces(cwl_definition.loadingOptions.namespaces or {})
         cwl_inputs, _ = loader.resolve_ref(
             cwl_args[1],
             checklinks=False,
@@ -76,8 +68,7 @@ async def main(workflow_config: WorkflowConfig, context: StreamFlowContext, args
         output_directory=args.outdir,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,
-        workflow_config=workflow_config,
-        loading_context=loading_context)
+        workflow_config=workflow_config)
     logger.info("Building workflow execution plan")
     workflow = translator.translate()
     await workflow.save(context)
